@@ -500,26 +500,28 @@ function normalizeEstado(raw){
 
 function parseDate(str){
   if(!str)return null;
-  // Soporta dd/mm/yyyy, yyyy-mm-dd, d/m/yyyy
   const s=str.trim();
-  let d;
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)){d=new Date(s);}
-  else if(/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)){
-    const[dd,mm,yyyy]=s.split('/');
-    d=new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`);
-  } else { d=new Date(s); }
-  return isNaN(d.getTime())?null:d;
+  let y,m,d;
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
+    // YYYY-MM-DD → construir con hora local para evitar desfase UTC
+    [y,m,d]=s.split('-').map(Number);
+  } else if(/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)){
+    const parts=s.split('/');
+    d=Number(parts[0]);m=Number(parts[1]);y=Number(parts[2]);
+  } else { return null; }
+  const dt=new Date(y,m-1,d,0,0,0,0);
+  return isNaN(dt.getTime())?null:dt;
 }
 
 function diasHabilesDesde(fechaStr){
   const fecha=parseDate(fechaStr);
   if(!fecha)return null;
   const hoy=new Date();
-  hoy.setHours(0,0,0,0);
+  const hoyLocal=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate(),0,0,0,0);
   fecha.setHours(0,0,0,0);
-  if(fecha>hoy)return 0;
+  if(fecha>hoyLocal)return 0;
   let dias=0,cur=new Date(fecha);
-  while(cur<hoy){
+  while(cur<hoyLocal){
     cur.setDate(cur.getDate()+1);
     const dow=cur.getDay();
     if(dow!==0&&dow!==6)dias++;
@@ -705,9 +707,8 @@ const CAPACIDAD = {
   default: 3
 };
 
-let progVista = 'semana'; // 'mes' | 'semana' | 'dia'
-let progFecha = new Date(); // fecha de referencia
-progFecha.setHours(0,0,0,0);
+let progVista = 'semana';
+let progFecha = (()=>{ const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0,0); })();
 
 let dragData = null; // {rowIdx, fromDate}
 
@@ -935,7 +936,7 @@ function renderProgramacion(){
             <span style="font-size:13px;font-weight:500;min-width:180px;text-align:center;">${navTitle}</span>
             <button class="btn" onclick="navProg(1)">→</button>
           </div>
-          <button class="btn ghost" onclick="progFecha=new Date();progFecha.setHours(0,0,0,0);renderProgramacion()">Hoy</button>
+          <button class="btn ghost" onclick="const d=new Date();progFecha=new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0,0);renderProgramacion()">Hoy</button>
           <div style="margin-left:auto;font-size:10px;color:var(--smoke);display:flex;align-items:center;gap:10px;">
             <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;"></span>OK</span>
             <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:var(--gold);border-radius:2px;"></span>70%+</span>
@@ -1048,31 +1049,33 @@ function onDayDragLeave(e){
 
 async function onDayDrop(e, dateStr){
   e.preventDefault();
-  e.currentTarget.classList.remove('cal-drop-active');
+  e.stopPropagation();
+  // Obtener fecha del elemento con data-date más cercano (por si el drop cae en hijo)
+  let target = e.target;
+  while(target && !target.dataset.date) target = target.parentElement;
+  const finalDate = (target && target.dataset.date) ? target.dataset.date : dateStr;
+
+  document.querySelectorAll('.cal-drop-active').forEach(el=>el.classList.remove('cal-drop-active'));
 
   const rowIdx = parseInt(e.dataTransfer.getData('text/plain'));
   if(isNaN(rowIdx)||!allRows[rowIdx]) return;
 
-  const row = allRows[rowIdx];
-  const oldDate = row[C.FECHA_PROD];
-  if(oldDate===dateStr) return; // no cambió
+  const oldDate = allRows[rowIdx][C.FECHA_PROD]||'';
+  if(normalizeDateStr(oldDate)===finalDate) return;
 
-  // Actualizar local
   while(allRows[rowIdx].length < 14) allRows[rowIdx].push('');
   const estadoAnterior = normalizeEstado(allRows[rowIdx][C.ESTADO]);
-  allRows[rowIdx][C.FECHA_PROD] = dateStr;
+  allRows[rowIdx][C.FECHA_PROD] = finalDate;
   if(estadoAnterior === 'Pendiente'){
     allRows[rowIdx][C.ESTADO] = 'Programado';
   }
 
-  // Re-render inmediato
   renderProgramacion();
   showToast('Guardando en Sheets...','warning');
 
-  // Escribir en Sheets — siempre fecha + estado si corresponde
   try{
     const sheetRow = rowIdx+1;
-    await writeRange(`${SHEET_NAME}!G${sheetRow}`, [[dateStr]]);
+    await writeRange(`${SHEET_NAME}!G${sheetRow}`, [[finalDate]]);
     if(estadoAnterior === 'Pendiente'){
       await writeRange(`${SHEET_NAME}!F${sheetRow}`, [['Programado']]);
     }
