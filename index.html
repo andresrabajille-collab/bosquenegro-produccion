@@ -536,7 +536,9 @@ function semColor(dias){
 
 function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-function todayISO(){return new Date().toISOString().split('T')[0];}
+function todayISO(){
+  return isoDate(new Date());
+}
 
 function formatDateCL(str){
   const d=parseDate(str);
@@ -717,7 +719,10 @@ function getCapacidadProducto(r){
 }
 
 function isoDate(d){
-  return d.toISOString().split('T')[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
 }
 
 function addDays(d, n){
@@ -750,14 +755,21 @@ function formatMonthYear(d){
   return `${meses[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Normalizar cualquier fecha a formato YYYY-MM-DD para comparar
+function normalizeDateStr(str){
+  if(!str||!str.trim()) return '';
+  const d = parseDate(str.trim());
+  if(!d) return str.trim();
+  return isoDate(d);
+}
+
 // Calcular carga total de capacidad para una fecha
 function getCargaDia(dateStr, rows){
   const programados = rows.filter(r =>
-    r[C.FECHA_PROD] === dateStr &&
+    normalizeDateStr(r[C.FECHA_PROD]) === dateStr &&
     ['Pendiente','Programado'].includes(normalizeEstado(r[C.ESTADO]))
   );
   const total = programados.reduce((acc, r) => acc + (parseInt(r[C.CANTIDAD])||1), 0);
-  // Capacidad máxima del día (simplificado: promedio)
   const maxCap = 10;
   return { total, maxCap, pct: Math.min(100, Math.round(total/maxCap*100)) };
 }
@@ -825,7 +837,7 @@ function renderDiaCol(dateStr, data, isToday){
   const pedidosDia = data
     .map((r,i)=>({r,i:i+1}))
     .filter(({r}) =>
-      r[C.FECHA_PROD]===dateStr &&
+      normalizeDateStr(r[C.FECHA_PROD])===dateStr &&
       ['Pendiente','Programado','Terminado'].includes(normalizeEstado(r[C.ESTADO]))
     );
   const carga = getCargaDia(dateStr, data);
@@ -951,7 +963,7 @@ function renderCalMes(dates, data, hoy){
     const dow  = date ? date.getDay() : 0;
     const isWeekend = dow===0||dow===6;
     const pedidosDia = data
-      .filter(r => r[C.FECHA_PROD]===d && ['Pendiente','Programado','Terminado'].includes(normalizeEstado(r[C.ESTADO])));
+      .filter(r => normalizeDateStr(r[C.FECHA_PROD])===d && ['Pendiente','Programado','Terminado'].includes(normalizeEstado(r[C.ESTADO])));
     const carga = getCargaDia(d, data);
     const barColor = carga.pct>=100?'var(--red)':carga.pct>=70?'var(--gold)':'var(--green)';
     const isCurrentMonth = date && date.getMonth()===progFecha.getMonth();
@@ -1047,8 +1059,9 @@ async function onDayDrop(e, dateStr){
 
   // Actualizar local
   while(allRows[rowIdx].length < 14) allRows[rowIdx].push('');
+  const estadoAnterior = normalizeEstado(allRows[rowIdx][C.ESTADO]);
   allRows[rowIdx][C.FECHA_PROD] = dateStr;
-  if(normalizeEstado(allRows[rowIdx][C.ESTADO])==='Pendiente'){
+  if(estadoAnterior === 'Pendiente'){
     allRows[rowIdx][C.ESTADO] = 'Programado';
   }
 
@@ -1056,19 +1069,17 @@ async function onDayDrop(e, dateStr){
   renderProgramacion();
   showToast('Guardando en Sheets...','warning');
 
-  // Escribir en Sheets
+  // Escribir en Sheets — siempre fecha + estado si corresponde
   try{
     const sheetRow = rowIdx+1;
-    // Fecha producción col G (índice 6)
     await writeRange(`${SHEET_NAME}!G${sheetRow}`, [[dateStr]]);
-    // Estado col F (índice 5) si cambió
-    if(normalizeEstado(row[C.ESTADO])==='Pendiente'){
+    if(estadoAnterior === 'Pendiente'){
       await writeRange(`${SHEET_NAME}!F${sheetRow}`, [['Programado']]);
     }
     showToast('✓ Pedido reprogramado','success');
   }catch(err){
-    // Revertir local
     allRows[rowIdx][C.FECHA_PROD] = oldDate;
+    if(estadoAnterior === 'Pendiente') allRows[rowIdx][C.ESTADO] = 'Pendiente';
     renderProgramacion();
     showToast('Error al guardar: '+err.message);
   }
