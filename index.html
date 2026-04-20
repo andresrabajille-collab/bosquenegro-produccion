@@ -581,6 +581,38 @@ function renderDashboard(){
   // Ordenar cada grupo por días desc
   Object.values(grupos).forEach(g => g.sort((a,b) => b.dias - a.dias));
 
+  // Ranking de productos pendientes (Pendiente + Programado)
+  const rankingMap = {};
+  pendientes.forEach(r => {
+    const prod = r[C.SUBPRODUCTO] || r[C.CATEGORIA] || 'Sin clasificar';
+    const term = r[C.TERMINACION] || '';
+    const key  = term ? `${prod} · ${term}` : prod;
+    const cant = parseInt(r[C.CANTIDAD]) || 1;
+    rankingMap[key] = (rankingMap[key]||0) + cant;
+  });
+  const ranking = Object.entries(rankingMap)
+    .sort((a,b) => b[1]-a[1])
+    .slice(0, 12);
+  const maxVal = ranking.length ? ranking[0][1] : 1;
+
+  const rankingHTML = ranking.length === 0
+    ? '<div style="font-size:12px;color:var(--smoke);padding:16px;text-align:center;">Sin datos</div>'
+    : ranking.map(([nombre, cant], i) => {
+        const pct = Math.round(cant / maxVal * 100);
+        const barColor = i === 0 ? 'var(--ember)' : i < 3 ? 'var(--gold)' : 'var(--mist)';
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:7px 16px;border-bottom:1px solid var(--fog);">
+            <span style="font-size:10px;color:var(--smoke);min-width:16px;text-align:right;">${i+1}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;">${esc(nombre)}</div>
+              <div style="height:5px;background:var(--fog);border-radius:2px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px;transition:width 0.4s;"></div>
+              </div>
+            </div>
+            <span style="font-size:13px;font-weight:500;color:var(--black);min-width:28px;text-align:right;">${cant}</span>
+          </div>`;
+      }).join('');
+
   document.getElementById('mainContent').innerHTML=`
     <div class="estados-row" style="margin-bottom:20px;">
       <div class="estado-block">
@@ -597,7 +629,7 @@ function renderDashboard(){
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;align-items:start;">
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;align-items:start;margin-bottom:16px;">
 
       <!-- Semáforo clickeable -->
       <div class="dash-card">
@@ -644,7 +676,18 @@ function renderDashboard(){
 
     </div>
 
-    <div style="margin-top:16px;font-size:10px;color:var(--smoke);text-align:right;letter-spacing:0.06em;">
+    <!-- Ranking productos pendientes -->
+    <div class="dash-card">
+      <div class="dash-card-header">
+        <span class="dash-card-title">Ranking productos pendientes de producción</span>
+        <span style="font-size:10px;color:var(--smoke)">${pendientes.reduce((a,r)=>a+(parseInt(r[C.CANTIDAD])||1),0)} unidades · ${pendientes.length} pedidos</span>
+      </div>
+      <div style="padding:8px 0;">
+        ${rankingHTML}
+      </div>
+    </div>
+
+    <div style="margin-top:12px;font-size:10px;color:var(--smoke);text-align:right;letter-spacing:0.06em;">
       Días hábiles desde fecha de ingreso · Nivel de servicio: 7–10 días hábiles
     </div>
   `;
