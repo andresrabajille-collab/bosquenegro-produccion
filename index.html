@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BosqueNegro — Sistema de Gestión</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root {
   --black: #1a1a18;
@@ -202,6 +203,10 @@ body{background:var(--paper);color:var(--black);font-family:var(--fn);font-size:
 .module-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;color:var(--smoke);text-align:center;}
 .module-placeholder .big{font-family:var(--fs);font-size:40px;font-style:italic;color:var(--mist);margin-bottom:12px;}
 .module-placeholder p{font-size:12px;line-height:1.6;}
+
+.stat{display:flex;flex-direction:column;gap:2px;}
+.stat-val{font-family:var(--fs);font-size:26px;font-weight:300;font-style:italic;color:var(--black);line-height:1;}
+.stat-lbl{font-size:10px;color:var(--smoke);letter-spacing:0.1em;text-transform:uppercase;margin-top:3px;}
 
 /* ── PROGRAMACIÓN ── */
 .cal-grid{display:flex;gap:8px;overflow-x:auto;align-items:flex-start;padding-bottom:8px;}
@@ -663,6 +668,7 @@ function renderListaFiltrada(grupos){
   return lista.map(({r, dias}) => {
     const estado = normalizeEstado(r[C.ESTADO]);
     const cant   = r[C.CANTIDAD] || '—';
+    const term   = r[C.TERMINACION] || '';
     const badgeClass = `badge-${estado}`;
     return `
       <div class="urgente-item" style="background:${col.bg};border-color:${col.border};">
@@ -672,10 +678,11 @@ function renderListaFiltrada(grupos){
           <div class="urgente-detail" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
             <span class="badge ${badgeClass}" style="font-size:9px;padding:2px 7px;">${estado}</span>
             <span>${esc(r[C.SUBPRODUCTO])||esc(r[C.CATEGORIA])||'—'}</span>
+            ${term?`<span style="color:var(--mist)">·</span><span>${esc(term)}</span>`:''}
             <span style="color:var(--mist)">·</span>
             <span>OT ${esc(r[C.OT])||'—'}</span>
             <span style="color:var(--mist)">·</span>
-            <span>Cant: ${esc(cant)}</span>
+            <span>x${esc(cant)}</span>
           </div>
         </div>
         <div class="urgente-dias" style="color:${col.dias};white-space:nowrap;">${dias} días</div>
@@ -781,6 +788,7 @@ function renderProgCard(r, rowIdx){
   const prod    = r[C.SUBPRODUCTO] || r[C.CATEGORIA] || '—';
   const cant    = r[C.CANTIDAD] || '1';
   const ot      = r[C.OT] || '—';
+  const term    = r[C.TERMINACION] || '';
   const producido = r[C.FECHA_PROD_REAL] && r[C.FECHA_PROD_REAL].trim();
   const dias    = diasHabilesDesde(r[C.FECHA_INGRESO]);
   const sem     = semColor(dias);
@@ -797,7 +805,7 @@ function renderProgCard(r, rowIdx){
       <span style="font-size:11px;font-weight:500;color:var(--black);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(cliente)}</span>
       ${producido ? '<span style="font-size:9px;color:var(--green);letter-spacing:0.06em;">✓ PROD</span>' : ''}
     </div>
-    <div style="font-size:10px;color:var(--ash);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(prod)} · x${esc(cant)} · OT ${esc(ot)}</div>
+    <div style="font-size:10px;color:var(--ash);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(prod)}${term?' · '+esc(term):''} · x${esc(cant)} · OT ${esc(ot)}</div>
     ${!producido ? `<button class="prog-done-btn" onclick="marcarProducido(event,${rowIdx})">✓ Producido</button>` : `<span style="font-size:9px;color:var(--green);">Producido ${formatDateCL(r[C.FECHA_PROD_REAL])}</span>`}
   </div>`;
 }
@@ -817,6 +825,7 @@ function renderColaSinProgramar(data){
   return sinFecha.map(({r,i}) => {
     const dias = diasHabilesDesde(r[C.FECHA_INGRESO]);
     const sem  = semColor(dias);
+    const term = r[C.TERMINACION] || '';
     const semColors = {verde:'var(--green)',amarillo:'var(--gold)',rojo:'var(--red)'};
     return `<div class="prog-card prog-queue"
       draggable="true"
@@ -825,7 +834,7 @@ function renderColaSinProgramar(data){
       ondragend="onCardDragEnd(event)"
       style="border-left:3px solid ${semColors[sem]||'var(--smoke)'};">
       <div style="font-size:11px;font-weight:500;color:var(--black);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r[C.CLIENTE]||'Sin nombre')}</div>
-      <div style="font-size:10px;color:var(--ash);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r[C.SUBPRODUCTO]||r[C.CATEGORIA]||'—')} · x${esc(r[C.CANTIDAD]||'1')}</div>
+      <div style="font-size:10px;color:var(--ash);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r[C.SUBPRODUCTO]||r[C.CATEGORIA]||'—')}${term?' · '+esc(term):''} · x${esc(r[C.CANTIDAD]||'1')}</div>
       <div style="font-size:9px;color:var(--smoke);margin-top:3px;">OT ${esc(r[C.OT]||'—')} · ${dias} días</div>
     </div>`;
   }).join('');
@@ -1117,22 +1126,345 @@ async function marcarProducido(e, rowIdx){
   }
 }
 
-// ─── DESPACHO (placeholder) ───────────────────────────────────────
+// ─── DESPACHO ────────────────────────────────────────────────────
+let despachoFiltro = 'todos';
+
 function renderDespacho(){
+  const data = allRows.slice(1);
+  const terminados = data
+    .map((r,i)=>({r,i:i+1}))
+    .filter(({r}) => normalizeEstado(r[C.ESTADO])==='Terminado')
+    .sort((a,b)=>{
+      const da = parseDate(a.r[C.FECHA_PROD_REAL])||new Date(0);
+      const db = parseDate(b.r[C.FECHA_PROD_REAL])||new Date(0);
+      return da-db;
+    });
+
+  const filtrados = despachoFiltro==='todos' ? terminados
+    : terminados.filter(({r})=>{
+        const dias = diasHabilesDesde(r[C.FECHA_INGRESO]);
+        return semColor(dias)===despachoFiltro;
+      });
+
+  const totalDias = terminados.map(({r})=>diasHabilesDesde(r[C.FECHA_INGRESO])||0);
+  const promDias  = totalDias.length ? Math.round(totalDias.reduce((a,b)=>a+b,0)/totalDias.length) : 0;
+
   document.getElementById('mainContent').innerHTML=`
-    <div class="module-placeholder">
-      <div class="big">◇</div>
-      <p>Módulo de Despacho<br><span style="color:var(--mist)">En construcción</span></p>
-    </div>`;
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap;">
+      <div style="display:flex;gap:6px;">
+        <button class="btn${despachoFiltro==='todos'?' primary':''}" onclick="setDespachoFiltro('todos')">Todos (${terminados.length})</button>
+        <button class="btn${despachoFiltro==='rojo'?' primary':''}" style="${despachoFiltro==='rojo'?'':'border-color:#b03020;color:#b03020;'}" onclick="setDespachoFiltro('rojo')">🔴 Urgentes</button>
+        <button class="btn${despachoFiltro==='amarillo'?' primary':''}" style="${despachoFiltro==='amarillo'?'':'border-color:var(--gold);color:var(--gold);'}" onclick="setDespachoFiltro('amarillo')">🟡 En plazo</button>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:20px;">
+        <div class="stat"><div class="stat-val" style="font-size:20px;color:var(--green)">${terminados.length}</div><div class="stat-lbl">Pendientes despacho</div></div>
+        <div class="stat"><div class="stat-val" style="font-size:20px;color:var(--smoke)">${promDias}</div><div class="stat-lbl">Días promedio en espera</div></div>
+      </div>
+    </div>
+
+    <div class="dash-card">
+      <div class="dash-card-header">
+        <span class="dash-card-title">Pedidos listos para despachar</span>
+        <span style="font-size:10px;color:var(--smoke)">${filtrados.length} pedidos</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px;">
+          <thead>
+            <tr style="background:var(--char);">
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;white-space:nowrap;">Sem.</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;">Cliente</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;">Producto</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;">Terminación</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;white-space:nowrap;">OT</th>
+              <th style="padding:9px 14px;text-align:center;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;">Cant.</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;white-space:nowrap;">F. Producción</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;white-space:nowrap;">Días espera</th>
+              <th style="padding:9px 14px;text-align:left;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--smoke);font-weight:400;">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtrados.length===0
+              ? `<tr><td colspan="9" style="padding:40px;text-align:center;color:var(--smoke);">Sin pedidos en esta categoría</td></tr>`
+              : filtrados.map(({r,i})=>{
+                  const dias   = diasHabilesDesde(r[C.FECHA_INGRESO])||0;
+                  const sem    = semColor(dias);
+                  const semColors={verde:'var(--green)',amarillo:'var(--gold)',rojo:'var(--red)'};
+                  const prod   = r[C.SUBPRODUCTO]||r[C.CATEGORIA]||'—';
+                  const term   = r[C.TERMINACION]||'—';
+                  return `<tr style="border-bottom:1px solid var(--fog);" onmouseover="this.style.background='var(--fog)'" onmouseout="this.style.background=''">
+                    <td style="padding:10px 14px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${semColors[sem]||'var(--smoke)'};"></span></td>
+                    <td style="padding:10px 14px;font-weight:500;color:var(--black);">${esc(r[C.CLIENTE]||'—')}</td>
+                    <td style="padding:10px 14px;color:var(--ash);">${esc(prod)}</td>
+                    <td style="padding:10px 14px;color:var(--ash);">${esc(term)}</td>
+                    <td style="padding:10px 14px;color:var(--smoke);font-size:11px;">${esc(r[C.OT]||'—')}</td>
+                    <td style="padding:10px 14px;text-align:center;">${esc(r[C.CANTIDAD]||'—')}</td>
+                    <td style="padding:10px 14px;color:var(--smoke);font-size:11px;">${formatDateCL(r[C.FECHA_PROD_REAL])}</td>
+                    <td style="padding:10px 14px;">
+                      <span style="font-size:11px;color:${semColors[sem]||'var(--smoke)'};">${dias} días</span>
+                    </td>
+                    <td style="padding:10px 14px;">
+                      <button class="prog-done-btn" style="width:auto;padding:4px 14px;font-size:10px;" onclick="marcarDespachado(${i})">↗ Despachar</button>
+                    </td>
+                  </tr>`;
+                }).join('')
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
-// ─── REPORTERÍA (placeholder) ─────────────────────────────────────
+function setDespachoFiltro(f){
+  despachoFiltro = f;
+  renderDespacho();
+}
+
+async function marcarDespachado(rowIdx){
+  if(!allRows[rowIdx]) return;
+  const cliente = allRows[rowIdx][C.CLIENTE]||'Pedido';
+  const hoy = todayISO();
+
+  while(allRows[rowIdx].length<14) allRows[rowIdx].push('');
+  allRows[rowIdx][C.ESTADO]              = 'Entregado';
+  allRows[rowIdx][C.FECHA_DESPACHO_REAL] = hoy;
+
+  renderDespacho();
+  showToast('Guardando...','warning');
+
+  try{
+    const sheetRow = rowIdx+1;
+    await writeRange(`${SHEET_NAME}!F${sheetRow}`, [['Entregado']]);
+    await writeRange(`${SHEET_NAME}!N${sheetRow}`, [[hoy]]);
+    showToast(`✓ ${esc(cliente)} marcado como despachado`,'success');
+  }catch(err){
+    allRows[rowIdx][C.ESTADO]              = 'Terminado';
+    allRows[rowIdx][C.FECHA_DESPACHO_REAL] = '';
+    renderDespacho();
+    showToast('Error: '+err.message);
+  }
+}
+
+// ─── REPORTERÍA ──────────────────────────────────────────────────
+let repPeriodo = 'semana'; // 'semana' | 'mes'
+let repChart1 = null, repChart2 = null, repChart3 = null;
+
+function getWeekKey(dateStr){
+  const d = parseDate(dateStr);
+  if(!d) return null;
+  const lunes = startOfWeek(d);
+  return isoDate(lunes);
+}
+
+function getMonthKey(dateStr){
+  const d = parseDate(dateStr);
+  if(!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function labelFromKey(key, periodo){
+  if(!key) return '?';
+  if(periodo==='mes'){
+    const [y,m] = key.split('-');
+    const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return `${meses[parseInt(m)-1]} ${y}`;
+  } else {
+    const d = parseDate(key);
+    if(!d) return key;
+    return `${d.getDate()}/${d.getMonth()+1}`;
+  }
+}
+
+function buildChartData(rows, dateField, periodo, limit=12){
+  const getKey = periodo==='mes' ? getMonthKey : getWeekKey;
+  const counts = {};
+  rows.forEach(r => {
+    const k = getKey(r[dateField]);
+    if(k) counts[k] = (counts[k]||0) + (parseInt(r[C.CANTIDAD])||1);
+  });
+  const keys = Object.keys(counts).sort().slice(-limit);
+  return {
+    labels: keys.map(k=>labelFromKey(k,periodo)),
+    data:   keys.map(k=>counts[k])
+  };
+}
+
+function buildTiemposData(rows, periodo, limit=12){
+  const getKey = periodo==='mes' ? getMonthKey : getWeekKey;
+  const grupos = {};
+  rows.forEach(r => {
+    const fProd = r[C.FECHA_PROD_REAL];
+    const fIng  = r[C.FECHA_INGRESO];
+    if(!fProd||!fIng) return;
+    const dias = diasHabilesDesde2(fIng, fProd);
+    if(dias===null||dias<0) return;
+    const k = getKey(fProd);
+    if(!k) return;
+    if(!grupos[k]) grupos[k]={sum:0,cnt:0};
+    grupos[k].sum += dias;
+    grupos[k].cnt++;
+  });
+  const keys = Object.keys(grupos).sort().slice(-limit);
+  return {
+    labels: keys.map(k=>labelFromKey(k,periodo)),
+    data:   keys.map(k=>Math.round(grupos[k].sum/grupos[k].cnt))
+  };
+}
+
+// Días hábiles entre dos fechas
+function diasHabilesDesde2(desde, hasta){
+  const d1 = parseDate(desde);
+  const d2 = parseDate(hasta);
+  if(!d1||!d2) return null;
+  d1.setHours(0,0,0,0); d2.setHours(0,0,0,0);
+  if(d2<d1) return 0;
+  let dias=0, cur=new Date(d1);
+  while(cur<d2){
+    cur.setDate(cur.getDate()+1);
+    const dow=cur.getDay();
+    if(dow!==0&&dow!==6) dias++;
+  }
+  return dias;
+}
+
+function destroyCharts(){
+  [repChart1,repChart2,repChart3].forEach(c=>{ if(c){ try{c.destroy();}catch(e){} } });
+  repChart1=repChart2=repChart3=null;
+}
+
 function renderReporteria(){
+  const data = allRows.slice(1);
+  const producidos  = data.filter(r => r[C.FECHA_PROD_REAL]&&r[C.FECHA_PROD_REAL].trim());
+  const despachados = data.filter(r => r[C.FECHA_DESPACHO_REAL]&&r[C.FECHA_DESPACHO_REAL].trim());
+  const conTiempos  = data.filter(r => r[C.FECHA_PROD_REAL]&&r[C.FECHA_INGRESO]);
+
+  const totalProducido  = producidos.reduce((a,r)=>a+(parseInt(r[C.CANTIDAD])||1),0);
+  const totalDespachado = despachados.reduce((a,r)=>a+(parseInt(r[C.CANTIDAD])||1),0);
+  const tiempos = conTiempos.map(r=>diasHabilesDesde2(r[C.FECHA_INGRESO],r[C.FECHA_PROD_REAL])||0).filter(d=>d>0);
+  const promTiempoProd = tiempos.length ? Math.round(tiempos.reduce((a,b)=>a+b,0)/tiempos.length) : 0;
+  const tiemposDesp = despachados.map(r=>diasHabilesDesde2(r[C.FECHA_PROD_REAL],r[C.FECHA_DESPACHO_REAL])||0).filter(d=>d>0);
+  const promTiempoDesp = tiemposDesp.length ? Math.round(tiemposDesp.reduce((a,b)=>a+b,0)/tiemposDesp.length) : 0;
+
+  destroyCharts();
+
   document.getElementById('mainContent').innerHTML=`
-    <div class="module-placeholder">
-      <div class="big">◈</div>
-      <p>Módulo de Reportería<br><span style="color:var(--mist)">En construcción</span></p>
-    </div>`;
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;">
+      <div style="background:var(--white);border:1px solid var(--fog);padding:16px 18px;">
+        <div style="font-family:var(--fs);font-size:32px;font-style:italic;color:var(--green)">${totalProducido}</div>
+        <div style="font-size:10px;color:var(--smoke);letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">Uds. producidas</div>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--fog);padding:16px 18px;">
+        <div style="font-family:var(--fs);font-size:32px;font-style:italic;color:var(--blue)">${totalDespachado}</div>
+        <div style="font-size:10px;color:var(--smoke);letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">Uds. despachadas</div>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--fog);padding:16px 18px;">
+        <div style="font-family:var(--fs);font-size:32px;font-style:italic;color:var(--gold)">${promTiempoProd}</div>
+        <div style="font-size:10px;color:var(--smoke);letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">Días prom. producción</div>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--fog);padding:16px 18px;">
+        <div style="font-family:var(--fs);font-size:32px;font-style:italic;color:var(--ember)">${promTiempoDesp}</div>
+        <div style="font-size:10px;color:var(--smoke);letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">Días prom. despacho</div>
+      </div>
+    </div>
+
+    <!-- Filtro periodo -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;">
+      <span style="font-size:10px;color:var(--smoke);letter-spacing:0.1em;text-transform:uppercase;">Período</span>
+      <button class="btn${repPeriodo==='semana'?' primary':''}" onclick="setRepPeriodo('semana')">Semanal</button>
+      <button class="btn${repPeriodo==='mes'?' primary':''}" onclick="setRepPeriodo('mes')">Mensual</button>
+    </div>
+
+    <!-- Gráficos -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div class="dash-card">
+        <div class="dash-card-header"><span class="dash-card-title">Unidades producidas</span></div>
+        <div class="dash-card-body"><canvas id="chart1" height="200"></canvas></div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-header"><span class="dash-card-title">Unidades despachadas</span></div>
+        <div class="dash-card-body"><canvas id="chart2" height="200"></canvas></div>
+      </div>
+    </div>
+    <div class="dash-card" style="margin-bottom:16px;">
+      <div class="dash-card-header"><span class="dash-card-title">Tiempo promedio de producción (días hábiles ingreso → producido)</span></div>
+      <div class="dash-card-body"><canvas id="chart3" height="120"></canvas></div>
+    </div>
+  `;
+
+  // Esperar que Chart.js cargue si aún no está
+  function tryRenderCharts(attempts){
+    if(typeof Chart === 'undefined'){
+      if(attempts>20) return;
+      setTimeout(()=>tryRenderCharts(attempts+1), 200);
+      return;
+    }
+    Chart.defaults.font.family = "'DM Mono', monospace";
+    Chart.defaults.font.size   = 11;
+    Chart.defaults.color       = '#8a8a82';
+
+    const barOpts = (label, color) => ({
+      type:'bar',
+      options:{
+        responsive:true,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y} uds`}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:45}},
+          y:{beginAtZero:true,grid:{color:'#e8e8e0'},ticks:{stepSize:1}}
+        }
+      },
+      data:{
+        labels:[],
+        datasets:[{label,data:[],backgroundColor:color+'99',borderColor:color,borderWidth:1,borderRadius:2}]
+      }
+    });
+
+    const d1 = buildChartData(producidos,  C.FECHA_PROD_REAL,     repPeriodo);
+    const d2 = buildChartData(despachados, C.FECHA_DESPACHO_REAL, repPeriodo);
+    const d3 = buildTiemposData(conTiempos, repPeriodo);
+
+    const cfg1 = barOpts('Producidas','#3a7a4a');
+    cfg1.data.labels=d1.labels; cfg1.data.datasets[0].data=d1.data;
+    repChart1 = new Chart(document.getElementById('chart1'), cfg1);
+
+    const cfg2 = barOpts('Despachadas','#2a5a8a');
+    cfg2.data.labels=d2.labels; cfg2.data.datasets[0].data=d2.data;
+    repChart2 = new Chart(document.getElementById('chart2'), cfg2);
+
+    const cfg3 = {
+      type:'line',
+      data:{
+        labels:d3.labels,
+        datasets:[{
+          label:'Días promedio',
+          data:d3.data,
+          borderColor:'#c4880a',
+          backgroundColor:'#c4880a22',
+          borderWidth:2,
+          pointRadius:4,
+          pointBackgroundColor:'#c4880a',
+          tension:0.3,
+          fill:true
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y} días hábiles`}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:45}},
+          y:{beginAtZero:true,grid:{color:'#e8e8e0'},ticks:{callback:v=>v+' d'}}
+        }
+      }
+    };
+    repChart3 = new Chart(document.getElementById('chart3'), cfg3);
+  }
+
+  tryRenderCharts(0);
+}
+
+function setRepPeriodo(p){
+  repPeriodo = p;
+  renderReporteria();
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────
