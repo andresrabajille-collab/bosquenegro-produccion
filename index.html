@@ -203,7 +203,56 @@ body{background:var(--paper);color:var(--black);font-family:var(--fn);font-size:
 .module-placeholder .big{font-family:var(--fs);font-size:40px;font-style:italic;color:var(--mist);margin-bottom:12px;}
 .module-placeholder p{font-size:12px;line-height:1.6;}
 
-/* ── RESPONSIVE ── */
+/* ── PROGRAMACIÓN ── */
+.cal-grid{display:flex;gap:8px;overflow-x:auto;align-items:flex-start;padding-bottom:8px;}
+.cal-grid.cal-mes{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.cal-grid.cal-semana{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
+.cal-grid.cal-dia{display:grid;grid-template-columns:1fr;gap:8px;max-width:480px;}
+
+.cal-col{background:var(--white);border:1px solid var(--fog);min-height:200px;min-width:0;}
+.cal-col.cal-today{border-color:var(--ember);}
+.cal-col.cal-weekend{background:#f8f8f0;}
+.cal-col.cal-drop-active{border-color:var(--blue);background:var(--blue-l);}
+
+.cal-col-header{padding:8px 10px 6px;border-bottom:1px solid var(--fog);display:flex;align-items:center;justify-content:space-between;}
+.cal-day-label{font-size:11px;font-weight:500;color:var(--ash);letter-spacing:0.04em;}
+.cal-col.cal-today .cal-day-label{color:var(--ember);}
+
+.cal-cap-bar{height:4px;background:var(--fog);margin:0 10px 0;border-radius:2px;overflow:hidden;}
+.cal-col .cal-cap-bar{margin:4px 10px;}
+
+.cal-col-body{padding:8px;display:flex;flex-direction:column;gap:6px;min-height:120px;}
+
+.cal-drop-hint{font-size:10px;color:var(--mist);text-align:center;padding:16px 8px;letter-spacing:0.06em;border:1px dashed var(--fog);margin:4px 0;}
+.cal-drop-hint-mes{font-size:16px;color:var(--mist);text-align:center;line-height:1;}
+
+.prog-card{background:var(--paper);border:1px solid var(--fog);padding:8px 10px;cursor:grab;transition:box-shadow 0.15s,opacity 0.15s;}
+.prog-card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.08);}
+.prog-card:active{cursor:grabbing;}
+.prog-card.prog-done{background:var(--green-l);border-color:#70b08044;opacity:0.85;}
+.prog-card.prog-queue{background:var(--white);margin-bottom:6px;}
+
+.prog-done-btn{background:transparent;border:1px solid var(--green);color:var(--green);font-family:var(--fn);font-size:10px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;transition:all 0.15s;width:100%;}
+.prog-done-btn:hover{background:var(--green);color:white;}
+
+/* Mes */
+.cal-mes-header{background:var(--char);color:var(--smoke);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;padding:7px 8px;text-align:center;}
+.cal-mes-cell{background:var(--white);border:1px solid var(--fog);padding:6px;min-height:90px;transition:background 0.1s;}
+.cal-mes-cell.cal-today{border-color:var(--ember);}
+.cal-mes-cell.cal-weekend{background:#f8f8f0;}
+.cal-mes-cell.cal-othermonth{opacity:0.4;}
+.cal-mes-cell.cal-drop-active{background:var(--blue-l);border-color:var(--blue);}
+.cal-mes-day-num{font-size:12px;color:var(--ash);font-weight:500;}
+.cal-mes-day-num.cal-today-num{color:var(--ember);}
+.cal-mes-pill{font-size:10px;background:var(--fog);padding:2px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:grab;border-radius:2px;}
+.cal-mes-pill:active{cursor:grabbing;}
+.cal-mes-pill.cal-mes-pill-done{background:var(--green-l);color:var(--green);}
+
+/* ── MÓDULO PLACEHOLDER ── */
+.module-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;color:var(--smoke);text-align:center;}
+.module-placeholder .big{font-family:var(--fs);font-size:40px;font-style:italic;color:var(--mist);margin-bottom:12px;}
+.module-placeholder p{font-size:12px;line-height:1.6;}
+
 @media(max-width:600px){
   .main{padding:14px;}
   .semaforo-grid{grid-template-columns:repeat(3,1fr);}
@@ -214,6 +263,7 @@ body{background:var(--paper);color:var(--black);font-family:var(--fn);font-size:
   .header{padding:0 14px;}
   .nav{padding:0 8px;}
   .nav-btn{padding:12px 12px;font-size:10px;}
+  .cal-grid.cal-semana{grid-template-columns:1fr;}
 }
 </style>
 </head>
@@ -646,13 +696,411 @@ function setDashFiltro(color){
   if(cuenta){ cuenta.textContent = window._dashGrupos[color].length+' pedidos'; }
 }
 
-// ─── PROGRAMACIÓN (placeholder) ───────────────────────────────────
-function renderProgramacion(){
-  document.getElementById('mainContent').innerHTML=`
-    <div class="module-placeholder">
-      <div class="big">◎</div>
-      <p>Módulo de Programación<br><span style="color:var(--mist)">En construcción — próximo módulo</span></p>
+// ─── PROGRAMACIÓN ────────────────────────────────────────────────
+// Capacidad diaria por producto (provisional)
+const CAPACIDAD = {
+  hanoi: 10,
+  default: 3
+};
+
+let progVista = 'semana'; // 'mes' | 'semana' | 'dia'
+let progFecha = new Date(); // fecha de referencia
+progFecha.setHours(0,0,0,0);
+
+let dragData = null; // {rowIdx, fromDate}
+
+function getCapacidadProducto(r){
+  const sub = (r[C.SUBPRODUCTO]||'').toLowerCase();
+  const cat = (r[C.CATEGORIA]||'').toLowerCase();
+  if(sub.includes('hanoi')||cat.includes('hanoi')) return CAPACIDAD.hanoi;
+  return CAPACIDAD.default;
+}
+
+function isoDate(d){
+  return d.toISOString().split('T')[0];
+}
+
+function addDays(d, n){
+  const r = new Date(d);
+  r.setDate(r.getDate()+n);
+  return r;
+}
+
+function startOfWeek(d){
+  const r = new Date(d);
+  const day = r.getDay(); // 0=Dom
+  const diff = day === 0 ? -6 : 1 - day; // lunes
+  r.setDate(r.getDate()+diff);
+  r.setHours(0,0,0,0);
+  return r;
+}
+
+function startOfMonth(d){
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function formatDayHeader(d){
+  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${dias[d.getDay()]} ${d.getDate()} ${meses[d.getMonth()]}`;
+}
+
+function formatMonthYear(d){
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return `${meses[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Calcular carga total de capacidad para una fecha
+function getCargaDia(dateStr, rows){
+  const programados = rows.filter(r =>
+    r[C.FECHA_PROD] === dateStr &&
+    ['Pendiente','Programado'].includes(normalizeEstado(r[C.ESTADO]))
+  );
+  const total = programados.reduce((acc, r) => acc + (parseInt(r[C.CANTIDAD])||1), 0);
+  // Capacidad máxima del día (simplificado: promedio)
+  const maxCap = 10;
+  return { total, maxCap, pct: Math.min(100, Math.round(total/maxCap*100)) };
+}
+
+function renderProgCard(r, rowIdx){
+  const estado  = normalizeEstado(r[C.ESTADO]);
+  const cliente = r[C.CLIENTE] || 'Sin nombre';
+  const prod    = r[C.SUBPRODUCTO] || r[C.CATEGORIA] || '—';
+  const cant    = r[C.CANTIDAD] || '1';
+  const ot      = r[C.OT] || '—';
+  const producido = r[C.FECHA_PROD_REAL] && r[C.FECHA_PROD_REAL].trim();
+  const dias    = diasHabilesDesde(r[C.FECHA_INGRESO]);
+  const sem     = semColor(dias);
+  const semColors = {verde:'var(--green)',amarillo:'var(--gold)',rojo:'var(--red)'};
+  const semDot  = semColors[sem]||'var(--smoke)';
+
+  return `<div class="prog-card${producido?' prog-done':''}"
+    draggable="true"
+    data-idx="${rowIdx}"
+    ondragstart="onCardDragStart(event,${rowIdx})"
+    ondragend="onCardDragEnd(event)">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:${semDot};flex-shrink:0;"></div>
+      <span style="font-size:11px;font-weight:500;color:var(--black);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(cliente)}</span>
+      ${producido ? '<span style="font-size:9px;color:var(--green);letter-spacing:0.06em;">✓ PROD</span>' : ''}
+    </div>
+    <div style="font-size:10px;color:var(--ash);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(prod)} · x${esc(cant)} · OT ${esc(ot)}</div>
+    ${!producido ? `<button class="prog-done-btn" onclick="marcarProducido(event,${rowIdx})">✓ Producido</button>` : `<span style="font-size:9px;color:var(--green);">Producido ${formatDateCL(r[C.FECHA_PROD_REAL])}</span>`}
+  </div>`;
+}
+
+function renderColaSinProgramar(data){
+  const sinFecha = data
+    .map((r,i)=>({r,i:i+1}))
+    .filter(({r}) =>
+      ['Pendiente','Programado'].includes(normalizeEstado(r[C.ESTADO])) &&
+      (!r[C.FECHA_PROD] || !r[C.FECHA_PROD].trim()) &&
+      !r[C.FECHA_PROD_REAL]
+    );
+
+  if(sinFecha.length===0)
+    return '<div style="font-size:11px;color:var(--smoke);text-align:center;padding:16px;">Sin pedidos en cola ✓</div>';
+
+  return sinFecha.map(({r,i}) => {
+    const dias = diasHabilesDesde(r[C.FECHA_INGRESO]);
+    const sem  = semColor(dias);
+    const semColors = {verde:'var(--green)',amarillo:'var(--gold)',rojo:'var(--red)'};
+    return `<div class="prog-card prog-queue"
+      draggable="true"
+      data-idx="${i}"
+      ondragstart="onCardDragStart(event,${i})"
+      ondragend="onCardDragEnd(event)"
+      style="border-left:3px solid ${semColors[sem]||'var(--smoke)'};">
+      <div style="font-size:11px;font-weight:500;color:var(--black);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r[C.CLIENTE]||'Sin nombre')}</div>
+      <div style="font-size:10px;color:var(--ash);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r[C.SUBPRODUCTO]||r[C.CATEGORIA]||'—')} · x${esc(r[C.CANTIDAD]||'1')}</div>
+      <div style="font-size:9px;color:var(--smoke);margin-top:3px;">OT ${esc(r[C.OT]||'—')} · ${dias} días</div>
     </div>`;
+  }).join('');
+}
+
+function renderDiaCol(dateStr, data, isToday){
+  const d = parseDate(dateStr);
+  const dow = d ? d.getDay() : -1;
+  const isWeekend = dow===0||dow===6;
+  const pedidosDia = data
+    .map((r,i)=>({r,i:i+1}))
+    .filter(({r}) =>
+      r[C.FECHA_PROD]===dateStr &&
+      ['Pendiente','Programado','Terminado'].includes(normalizeEstado(r[C.ESTADO]))
+    );
+  const carga = getCargaDia(dateStr, data);
+
+  const barColor = carga.pct>=100?'var(--red)':carga.pct>=70?'var(--gold)':'var(--green)';
+
+  return `<div class="cal-col${isToday?' cal-today':''}${isWeekend?' cal-weekend':''}"
+    data-date="${dateStr}"
+    ondragover="onDayDragOver(event)"
+    ondragleave="onDayDragLeave(event)"
+    ondrop="onDayDrop(event,'${dateStr}')">
+    <div class="cal-col-header">
+      <span class="cal-day-label">${formatDayHeader(d)}</span>
+      ${isToday?'<span style="font-size:9px;color:var(--ember);letter-spacing:0.08em;">HOY</span>':''}
+    </div>
+    <div class="cal-cap-bar" title="Carga: ${carga.total} uds">
+      <div style="width:${carga.pct}%;background:${barColor};height:100%;transition:width 0.3s;"></div>
+    </div>
+    <div class="cal-col-body" id="day-${dateStr}">
+      ${pedidosDia.length===0
+        ? '<div class="cal-drop-hint">Arrastra aquí</div>'
+        : pedidosDia.map(({r,i})=>renderProgCard(r,i)).join('')
+      }
+    </div>
+  </div>`;
+}
+
+function getDatesForVista(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  if(progVista==='dia'){
+    return [isoDate(progFecha)];
+  } else if(progVista==='semana'){
+    const lunes = startOfWeek(progFecha);
+    return Array.from({length:7},(_,i)=>isoDate(addDays(lunes,i)));
+  } else {
+    // mes: semanas completas que cubran el mes
+    const inicio = startOfMonth(progFecha);
+    const lunes = startOfWeek(inicio);
+    const fin = new Date(progFecha.getFullYear(), progFecha.getMonth()+1, 0);
+    const dates = [];
+    let cur = new Date(lunes);
+    while(cur <= fin || dates.length%7!==0){
+      dates.push(isoDate(cur));
+      cur = addDays(cur,1);
+      if(dates.length>42) break;
+    }
+    return dates;
+  }
+}
+
+function renderProgramacion(){
+  const data = allRows.slice(1);
+  const hoy  = isoDate(new Date());
+  const dates = getDatesForVista();
+
+  // Título navegación
+  let navTitle = '';
+  if(progVista==='dia') navTitle = formatDayHeader(progFecha);
+  else if(progVista==='semana'){
+    const lunes = startOfWeek(progFecha);
+    const dom   = addDays(lunes,6);
+    navTitle = `${lunes.getDate()} – ${dom.getDate()} ${formatMonthYear(dom)}`;
+  } else navTitle = formatMonthYear(progFecha);
+
+  const colsHTML = progVista==='mes'
+    ? renderCalMes(dates, data, hoy)
+    : dates.map(d=>renderDiaCol(d, data, d===hoy)).join('');
+
+  document.getElementById('mainContent').innerHTML=`
+    <div style="display:flex;gap:16px;align-items:flex-start;">
+
+      <!-- Cola sin programar -->
+      <div style="width:220px;flex-shrink:0;">
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-title">Cola sin programar</span>
+          </div>
+          <div style="padding:10px;max-height:calc(100vh - 180px);overflow-y:auto;" id="colaContainer">
+            ${renderColaSinProgramar(data)}
+          </div>
+        </div>
+      </div>
+
+      <!-- Calendario -->
+      <div style="flex:1;min-width:0;">
+        <!-- Toolbar calendario -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+          <div style="display:flex;gap:4px;">
+            <button class="btn${progVista==='dia'?' primary':''}" onclick="setProgVista('dia')">Día</button>
+            <button class="btn${progVista==='semana'?' primary':''}" onclick="setProgVista('semana')">Semana</button>
+            <button class="btn${progVista==='mes'?' primary':''}" onclick="setProgVista('mes')">Mes</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn" onclick="navProg(-1)">←</button>
+            <span style="font-size:13px;font-weight:500;min-width:180px;text-align:center;">${navTitle}</span>
+            <button class="btn" onclick="navProg(1)">→</button>
+          </div>
+          <button class="btn ghost" onclick="progFecha=new Date();progFecha.setHours(0,0,0,0);renderProgramacion()">Hoy</button>
+          <div style="margin-left:auto;font-size:10px;color:var(--smoke);display:flex;align-items:center;gap:10px;">
+            <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;"></span>OK</span>
+            <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:var(--gold);border-radius:2px;"></span>70%+</span>
+            <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:var(--red);border-radius:2px;"></span>Lleno</span>
+          </div>
+        </div>
+
+        <!-- Grilla calendario -->
+        <div class="cal-grid cal-${progVista}" id="calGrid">
+          ${colsHTML}
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderCalMes(dates, data, hoy){
+  // Encabezados de días
+  const headers = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>
+    `<div class="cal-mes-header">${d}</div>`).join('');
+
+  const cols = dates.map(d=>{
+    const date = parseDate(d);
+    const dow  = date ? date.getDay() : 0;
+    const isWeekend = dow===0||dow===6;
+    const pedidosDia = data
+      .filter(r => r[C.FECHA_PROD]===d && ['Pendiente','Programado','Terminado'].includes(normalizeEstado(r[C.ESTADO])));
+    const carga = getCargaDia(d, data);
+    const barColor = carga.pct>=100?'var(--red)':carga.pct>=70?'var(--gold)':'var(--green)';
+    const isCurrentMonth = date && date.getMonth()===progFecha.getMonth();
+    return `<div class="cal-mes-cell${d===hoy?' cal-today':''}${isWeekend?' cal-weekend':''}${!isCurrentMonth?' cal-othermonth':''}"
+      data-date="${d}"
+      ondragover="onDayDragOver(event)"
+      ondragleave="onDayDragLeave(event)"
+      ondrop="onDayDrop(event,'${d}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+        <span class="cal-mes-day-num${d===hoy?' cal-today-num':''}">${date?date.getDate():''}</span>
+        ${carga.total>0?`<span style="font-size:9px;color:var(--smoke)">${carga.total}u</span>`:''}
+      </div>
+      ${carga.total>0?`<div class="cal-cap-bar" style="margin-bottom:4px;"><div style="width:${carga.pct}%;background:${barColor};height:100%;"></div></div>`:''}
+      <div style="display:flex;flex-direction:column;gap:2px;min-height:24px;" id="day-${d}">
+        ${pedidosDia.slice(0,3).map(r=>{
+          const idx = allRows.indexOf(r);
+          const producido = r[C.FECHA_PROD_REAL]&&r[C.FECHA_PROD_REAL].trim();
+          const dias = diasHabilesDesde(r[C.FECHA_INGRESO]);
+          const sem  = semColor(dias);
+          const semColors={verde:'var(--green)',amarillo:'var(--gold)',rojo:'var(--red)'};
+          return `<div class="cal-mes-pill${producido?' cal-mes-pill-done':''}"
+            draggable="true"
+            data-idx="${idx}"
+            ondragstart="onCardDragStart(event,${idx})"
+            ondragend="onCardDragEnd(event)"
+            style="border-left:2px solid ${semColors[sem]||'var(--smoke)'};"
+            title="${esc(r[C.CLIENTE]||'')} · ${esc(r[C.SUBPRODUCTO]||r[C.CATEGORIA]||'')}">
+            ${esc((r[C.CLIENTE]||'').split(' ')[0])}${producido?' ✓':''}
+          </div>`;
+        }).join('')}
+        ${pedidosDia.length>3?`<div style="font-size:9px;color:var(--smoke);padding:1px 3px;">+${pedidosDia.length-3} más</div>`:''}
+        ${pedidosDia.length===0?'<div class="cal-drop-hint-mes">+</div>':''}
+      </div>
+    </div>`;
+  });
+
+  return headers + cols.join('');
+}
+
+function setProgVista(v){
+  progVista = v;
+  renderProgramacion();
+}
+
+function navProg(dir){
+  if(progVista==='dia'){
+    progFecha = addDays(progFecha, dir);
+  } else if(progVista==='semana'){
+    progFecha = addDays(progFecha, dir*7);
+  } else {
+    progFecha = new Date(progFecha.getFullYear(), progFecha.getMonth()+dir, 1);
+  }
+  renderProgramacion();
+}
+
+// ── DRAG & DROP ──────────────────────────────────────────────────
+function onCardDragStart(e, rowIdx){
+  dragData = { rowIdx };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(rowIdx));
+  setTimeout(()=>{ if(e.target) e.target.style.opacity='0.4'; }, 0);
+}
+
+function onCardDragEnd(e){
+  if(e.target) e.target.style.opacity='';
+  dragData = null;
+  document.querySelectorAll('.cal-drop-active').forEach(el=>el.classList.remove('cal-drop-active'));
+}
+
+function onDayDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const col = e.currentTarget;
+  col.classList.add('cal-drop-active');
+}
+
+function onDayDragLeave(e){
+  if(!e.currentTarget.contains(e.relatedTarget)){
+    e.currentTarget.classList.remove('cal-drop-active');
+  }
+}
+
+async function onDayDrop(e, dateStr){
+  e.preventDefault();
+  e.currentTarget.classList.remove('cal-drop-active');
+
+  const rowIdx = parseInt(e.dataTransfer.getData('text/plain'));
+  if(isNaN(rowIdx)||!allRows[rowIdx]) return;
+
+  const row = allRows[rowIdx];
+  const oldDate = row[C.FECHA_PROD];
+  if(oldDate===dateStr) return; // no cambió
+
+  // Actualizar local
+  while(allRows[rowIdx].length < 14) allRows[rowIdx].push('');
+  allRows[rowIdx][C.FECHA_PROD] = dateStr;
+  if(normalizeEstado(allRows[rowIdx][C.ESTADO])==='Pendiente'){
+    allRows[rowIdx][C.ESTADO] = 'Programado';
+  }
+
+  // Re-render inmediato
+  renderProgramacion();
+  showToast('Guardando en Sheets...','warning');
+
+  // Escribir en Sheets
+  try{
+    const sheetRow = rowIdx+1;
+    // Fecha producción col G (índice 6)
+    await writeRange(`${SHEET_NAME}!G${sheetRow}`, [[dateStr]]);
+    // Estado col F (índice 5) si cambió
+    if(normalizeEstado(row[C.ESTADO])==='Pendiente'){
+      await writeRange(`${SHEET_NAME}!F${sheetRow}`, [['Programado']]);
+    }
+    showToast('✓ Pedido reprogramado','success');
+  }catch(err){
+    // Revertir local
+    allRows[rowIdx][C.FECHA_PROD] = oldDate;
+    renderProgramacion();
+    showToast('Error al guardar: '+err.message);
+  }
+}
+
+// ── MARCAR PRODUCIDO ─────────────────────────────────────────────
+async function marcarProducido(e, rowIdx){
+  e.stopPropagation();
+  if(!allRows[rowIdx]) return;
+
+  const hoy = todayISO();
+  const clienteNombre = allRows[rowIdx][C.CLIENTE]||'Pedido';
+
+  // Actualizar local
+  while(allRows[rowIdx].length<14) allRows[rowIdx].push('');
+  allRows[rowIdx][C.ESTADO]         = 'Terminado';
+  allRows[rowIdx][C.FECHA_PROD_REAL]= hoy;
+
+  renderProgramacion();
+  showToast('Guardando...','warning');
+
+  try{
+    const sheetRow = rowIdx+1;
+    await writeRange(`${SHEET_NAME}!F${sheetRow}`, [['Terminado']]);
+    await writeRange(`${SHEET_NAME}!M${sheetRow}`, [[hoy]]);
+    showToast(`✓ ${esc(clienteNombre)} marcado como producido`,'success');
+  }catch(err){
+    allRows[rowIdx][C.ESTADO]          = 'Programado';
+    allRows[rowIdx][C.FECHA_PROD_REAL] = '';
+    renderProgramacion();
+    showToast('Error: '+err.message);
+  }
 }
 
 // ─── DESPACHO (placeholder) ───────────────────────────────────────
