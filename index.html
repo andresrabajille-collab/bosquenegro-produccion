@@ -164,6 +164,10 @@ body{background:var(--paper);color:var(--black);font-family:var(--fn);font-size:
 .sem-block.amarillo .sem-lbl{color:#8a5800;}
 .sem-block.rojo .sem-lbl{color:var(--red);}
 .sem-sub{font-size:9px;margin-top:2px;color:inherit;opacity:0.7;}
+.sem-selected{outline:2px solid;outline-offset:-2px;}
+.sem-block.verde.sem-selected{outline-color:var(--green);}
+.sem-block.amarillo.sem-selected{outline-color:var(--gold);}
+.sem-block.rojo.sem-selected{outline-color:var(--red);}
 
 /* Pedidos urgentes */
 .urgentes-list{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;}
@@ -491,6 +495,8 @@ function formatDateCL(str){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────
+let dashFiltroSem = 'rojo'; // filtro activo en lista
+
 function renderDashboard(){
   if(allRows.length===0){
     document.getElementById('mainContent').innerHTML=
@@ -498,58 +504,43 @@ function renderDashboard(){
     return;
   }
 
-  const data=allRows.slice(1);
-  const pendientes=data.filter(r=>['Pendiente','Programado'].includes(normalizeEstado(r[C.ESTADO])));
-  const terminados=data.filter(r=>normalizeEstado(r[C.ESTADO])==='Terminado');
-  const entregados=data.filter(r=>normalizeEstado(r[C.ESTADO])==='Entregado');
-  const soloPendientes=data.filter(r=>normalizeEstado(r[C.ESTADO])==='Pendiente');
-  const soloProgramados=data.filter(r=>normalizeEstado(r[C.ESTADO])==='Programado');
+  const data = allRows.slice(1);
+  // Solo activos: Pendiente + Programado + Terminado (sin Entregado)
+  const activos     = data.filter(r => normalizeEstado(r[C.ESTADO]) !== 'Entregado');
+  const pendientes  = activos.filter(r => ['Pendiente','Programado'].includes(normalizeEstado(r[C.ESTADO])));
+  const terminados  = activos.filter(r => normalizeEstado(r[C.ESTADO]) === 'Terminado');
+  const soloPend    = activos.filter(r => normalizeEstado(r[C.ESTADO]) === 'Pendiente');
+  const soloProg    = activos.filter(r => normalizeEstado(r[C.ESTADO]) === 'Programado');
 
-  // Semáforo sobre pendientes + programados activos
-  let verde=0,amarillo=0,rojo=0;
-  const urgentes=[];
-  pendientes.forEach(r=>{
-    const dias=diasHabilesDesde(r[C.FECHA_INGRESO]);
-    const color=semColor(dias);
-    if(color==='verde')verde++;
-    else if(color==='amarillo')amarillo++;
-    else{rojo++;urgentes.push({r,dias});}
+  // Clasificar por semáforo
+  const grupos = { verde:[], amarillo:[], rojo:[] };
+  pendientes.forEach(r => {
+    const dias = diasHabilesDesde(r[C.FECHA_INGRESO]);
+    const col  = semColor(dias);
+    grupos[col].push({r, dias: dias||0});
   });
-  urgentes.sort((a,b)=>(b.dias||0)-(a.dias||0));
-
-  const urgHTML=urgentes.length===0
-    ? '<div style="font-size:12px;color:var(--smoke);text-align:center;padding:20px;">Sin pedidos críticos ✓</div>'
-    : urgentes.slice(0,8).map(({r,dias})=>`
-        <div class="urgente-item">
-          <div class="urgente-dot"></div>
-          <div class="urgente-info">
-            <div class="urgente-cliente">${esc(r[C.CLIENTE])||'Sin nombre'}</div>
-            <div class="urgente-detail">${esc(r[C.SUBPRODUCTO])||esc(r[C.CATEGORIA])||'—'} · OT ${esc(r[C.OT])||'—'}</div>
-          </div>
-          <div class="urgente-dias">${dias} días</div>
-        </div>`).join('');
+  // Ordenar cada grupo por días desc
+  Object.values(grupos).forEach(g => g.sort((a,b) => b.dias - a.dias));
 
   document.getElementById('mainContent').innerHTML=`
     <div class="estados-row" style="margin-bottom:20px;">
       <div class="estado-block">
-        <div class="estado-n c-ember" style="color:var(--ember)">${soloPendientes.length}</div>
+        <div class="estado-n" style="color:var(--ember)">${soloPend.length}</div>
         <div class="estado-l">Pendiente</div>
       </div>
       <div class="estado-block">
-        <div class="estado-n" style="color:var(--gold)">${soloProgramados.length}</div>
+        <div class="estado-n" style="color:var(--gold)">${soloProg.length}</div>
         <div class="estado-l">Programado</div>
       </div>
       <div class="estado-block">
         <div class="estado-n" style="color:var(--green)">${terminados.length}</div>
         <div class="estado-l">Terminado</div>
       </div>
-      <div class="estado-block">
-        <div class="estado-n" style="color:var(--smoke)">${entregados.length}</div>
-        <div class="estado-l">Entregado</div>
-      </div>
     </div>
 
-    <div class="dash-grid">
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;align-items:start;">
+
+      <!-- Semáforo clickeable -->
       <div class="dash-card">
         <div class="dash-card-header">
           <span class="dash-card-title">Nivel de servicio — Pedidos activos</span>
@@ -557,40 +548,102 @@ function renderDashboard(){
         </div>
         <div class="dash-card-body">
           <div class="semaforo-grid">
-            <div class="sem-block verde">
-              <div class="sem-num">${verde}</div>
+            <div class="sem-block verde${dashFiltroSem==='verde'?' sem-selected':''}" onclick="setDashFiltro('verde')" style="cursor:pointer;">
+              <div class="sem-num">${grupos.verde.length}</div>
               <div class="sem-lbl">Verde</div>
               <div class="sem-sub">0–6 días</div>
             </div>
-            <div class="sem-block amarillo">
-              <div class="sem-num">${amarillo}</div>
+            <div class="sem-block amarillo${dashFiltroSem==='amarillo'?' sem-selected':''}" onclick="setDashFiltro('amarillo')" style="cursor:pointer;">
+              <div class="sem-num">${grupos.amarillo.length}</div>
               <div class="sem-lbl">Amarillo</div>
               <div class="sem-sub">7–10 días</div>
             </div>
-            <div class="sem-block rojo">
-              <div class="sem-num">${rojo}</div>
+            <div class="sem-block rojo${dashFiltroSem==='rojo'?' sem-selected':''}" onclick="setDashFiltro('rojo')" style="cursor:pointer;">
+              <div class="sem-num">${grupos.rojo.length}</div>
               <div class="sem-lbl">Rojo</div>
               <div class="sem-sub">11+ días</div>
             </div>
           </div>
+          <div style="font-size:10px;color:var(--smoke);margin-top:14px;text-align:center;letter-spacing:0.06em;">
+            Clic en un color para filtrar la lista →
+          </div>
         </div>
       </div>
 
+      <!-- Lista filtrable -->
       <div class="dash-card">
         <div class="dash-card-header">
-          <span class="dash-card-title">Pedidos críticos (11+ días)</span>
-          <span style="font-size:10px;color:var(--red)">${rojo} urgentes</span>
+          <span class="dash-card-title" id="listaTitle">Pedidos — <span id="listaColor" style="text-transform:capitalize">${dashFiltroSem}</span></span>
+          <span style="font-size:10px;color:var(--smoke)" id="listaCuenta">${grupos[dashFiltroSem].length} pedidos</span>
         </div>
-        <div class="dash-card-body">
-          <div class="urgentes-list">${urgHTML}</div>
+        <div class="dash-card-body" style="padding:0;">
+          <div class="urgentes-list" id="urgentesList" style="max-height:380px;">
+            ${renderListaFiltrada(grupos)}
+          </div>
         </div>
       </div>
+
     </div>
 
     <div style="margin-top:16px;font-size:10px;color:var(--smoke);text-align:right;letter-spacing:0.06em;">
-      Días hábiles calculados desde fecha de ingreso · Nivel de servicio: 7–10 días hábiles
+      Días hábiles desde fecha de ingreso · Nivel de servicio: 7–10 días hábiles
     </div>
   `;
+
+  // Guardar grupos en variable global para re-render rápido
+  window._dashGrupos = grupos;
+}
+
+function renderListaFiltrada(grupos){
+  const lista = grupos[dashFiltroSem];
+  if(lista.length === 0)
+    return '<div style="font-size:12px;color:var(--smoke);text-align:center;padding:24px;">Sin pedidos en este rango ✓</div>';
+
+  const colorMap = {
+    verde:   { dot:'var(--green)', bg:'var(--green-l)', border:'#70b08044', dias:'var(--green)' },
+    amarillo:{ dot:'var(--gold)',  bg:'var(--gold-l)',  border:'#d4a04044', dias:'var(--gold)'  },
+    rojo:    { dot:'var(--red)',   bg:'var(--red-l)',   border:'#e0808044', dias:'var(--red)'   }
+  };
+  const col = colorMap[dashFiltroSem];
+
+  return lista.map(({r, dias}) => {
+    const estado = normalizeEstado(r[C.ESTADO]);
+    const cant   = r[C.CANTIDAD] || '—';
+    const badgeClass = `badge-${estado}`;
+    return `
+      <div class="urgente-item" style="background:${col.bg};border-color:${col.border};">
+        <div class="urgente-dot" style="background:${col.dot};"></div>
+        <div class="urgente-info">
+          <div class="urgente-cliente">${esc(r[C.CLIENTE])||'Sin nombre'}</div>
+          <div class="urgente-detail" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            <span class="badge ${badgeClass}" style="font-size:9px;padding:2px 7px;">${estado}</span>
+            <span>${esc(r[C.SUBPRODUCTO])||esc(r[C.CATEGORIA])||'—'}</span>
+            <span style="color:var(--mist)">·</span>
+            <span>OT ${esc(r[C.OT])||'—'}</span>
+            <span style="color:var(--mist)">·</span>
+            <span>Cant: ${esc(cant)}</span>
+          </div>
+        </div>
+        <div class="urgente-dias" style="color:${col.dias};white-space:nowrap;">${dias} días</div>
+      </div>`;
+  }).join('');
+}
+
+function setDashFiltro(color){
+  dashFiltroSem = color;
+  if(!window._dashGrupos) { renderDashboard(); return; }
+  // Re-render solo la lista y los bloques del semáforo sin recargar todo
+  const colores = ['verde','amarillo','rojo'];
+  colores.forEach(c => {
+    const el = document.querySelector(`.sem-block.${c}`);
+    if(el){ el.classList.toggle('sem-selected', c===color); }
+  });
+  const lista = document.getElementById('urgentesList');
+  const titulo = document.getElementById('listaColor');
+  const cuenta = document.getElementById('listaCuenta');
+  if(lista){ lista.innerHTML = renderListaFiltrada(window._dashGrupos); lista.scrollTop=0; }
+  if(titulo){ titulo.textContent = color; }
+  if(cuenta){ cuenta.textContent = window._dashGrupos[color].length+' pedidos'; }
 }
 
 // ─── PROGRAMACIÓN (placeholder) ───────────────────────────────────
